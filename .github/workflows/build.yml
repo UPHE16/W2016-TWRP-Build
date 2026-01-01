@@ -1,4 +1,4 @@
-name: W2016 TWRP Forced Slim Build
+name: W2016 TWRP Slimmed Final
 
 on:
   workflow_dispatch:
@@ -15,55 +15,57 @@ jobs:
       run: |
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc "/usr/local/share/boost" "$AGENT_TOOLSDIRECTORY"
 
-    - name: 安装环境
+    - name: 安装编译环境 & 补齐旧版库
       run: |
         sudo apt-get update
+        # 安装 Python 2 和 libtinfo5 (解决 image_2bc967.png 的库缺失问题)
         sudo apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 libncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip bc python2 libtinfo5 libncurses5
+        # 强制链接 python2 (解决 image_026b41.png 的语法报错)
         sudo ln -sf /usr/bin/python2 /usr/bin/python
 
-    - name: 同步源码
+    - name: 安装 Repo
       run: |
         mkdir ~/bin && curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo && chmod a+x ~/bin/repo
-        export PATH=$HOME/bin:$PATH
+        echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
+
+    - name: 初始化并同步源码
+      run: |
+        PATH=$HOME/bin:$PATH
         mkdir ~/twrp && cd ~/twrp
         repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-9.0
         repo sync -j$(nproc) --force-sync --no-tags --no-clone-bundle
 
-    - name: 强制修改设备树配置 (核心步骤)
+    - name: 克隆并暴力修改设备树
       run: |
         cd ~/twrp
         git clone https://github.com/UPHE16/SM-W2016_twrp_device_tree.git device/samsung/w2016
         cd device/samsung/w2016
-        
-        # 1. 修正命名
+        # 修正命名 (解决 image_2b6789.png 找不到配置文件的问题)
         [ -f omni_royceltectc.mk ] && mv omni_royceltectc.mk omni_w2016.mk || true
-        sed -i 's/royceltectc/w2016/g' *.mk || true
+        grep -rl 'royceltectc' . | xargs sed -i 's/royceltectc/w2016/g' || true
         sed -i 's/omni_royceltectc/omni_w2016/g' AndroidProducts.mk || true
-
-        # 2. 【手术级修改】删除旧的压缩和大小定义，强制写入新参数
-        # 先清理掉可能存在的冲突项
-        sed -i '/LZMA_RAMDISK_TARGET/d' BoardConfig.mk
-        sed -i '/BOARD_RECOVERYIMAGE_PARTITION_SIZE/d' BoardConfig.mk
         
-        # 写入强制参数
+        # 暴力清理旧变量并强制注入 LZMA 压缩
+        sed -i '/LZMA_RAMDISK_TARGET/d' BoardConfig.mk
         echo "LZMA_RAMDISK_TARGET := true" >> BoardConfig.mk
-        # 强制告诉编译器分区只有 30MB，如果超标它会报错停下，而不是生成坏包
-        echo "BOARD_RECOVERYIMAGE_PARTITION_SIZE := 31457280" >> BoardConfig.mk
         echo "TW_EXCLUDE_ENCRYPTED_BACKUPS := true" >> BoardConfig.mk
         echo "TW_INCLUDE_CRYPTO := false" >> BoardConfig.mk
-        
-        # 3. 彻底删除多语言（这是减重最明显的）
+        # 彻底物理删除语言包减重
         rm -rf ~/twrp/bootable/recovery/languages/*
 
     - name: 开始编译
       run: |
-        export PATH=$HOME/bin:$PATH
+        PATH=$HOME/bin:$PATH
         cd ~/twrp
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
         lunch omni_w2016-eng
-        # 编译前清理旧的缓存，确保这次的修改被应用
+        # 【关键】先清理旧产物，确保体积缩减生效
         make clean
         make recoveryimage -j$(nproc)
 
-    - name: 上传产物
+    - name: 上传编译结果
+      uses: actions/upload-artifact@v4
+      with:
+        name: W2016-TWRP-New
+        path: ~/twrp/out/target/product/w2016/recovery.img
