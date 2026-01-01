@@ -11,61 +11,50 @@ jobs:
     - name: 检查代码
       uses: actions/checkout@v4
 
-    - name: 腾出磁盘空间
+    - name: 释放服务器空间
       run: |
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc "/usr/local/share/boost" "$AGENT_TOOLSDIRECTORY"
 
-    - name: 安装编译环境 & 补齐旧版库
+    - name: 配置 Python 2 与运行库
       run: |
         sudo apt-get update
-        # 安装 Python 2 和 libtinfo5 (解决 image_2bc967.png 的库缺失问题)
+        # 解决 image_2bc967.png 中的 libtinfo5 缺失问题
         sudo apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 libncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip bc python2 libtinfo5 libncurses5
-        # 强制链接 python2 (解决 image_026b41.png 的语法报错)
+        # 解决 image_026b41.png 中的 Python 语法报错
         sudo ln -sf /usr/bin/python2 /usr/bin/python
 
-    - name: 安装 Repo
+    - name: 安装 Repo 工具
       run: |
-        mkdir ~/bin && curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo && chmod a+x ~/bin/repo
+        mkdir ~/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        chmod a+x ~/bin/repo
         echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
 
-    - name: 初始化并同步源码
+    - name: 同步 TWRP 9.0 源码
       run: |
         PATH=$HOME/bin:$PATH
         mkdir ~/twrp && cd ~/twrp
         repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-9.0
         repo sync -j$(nproc) --force-sync --no-tags --no-clone-bundle
 
-    - name: 克隆并暴力修改设备树
+    - name: 克隆设备树并执行“暴力瘦身”
       run: |
         cd ~/twrp
         git clone https://github.com/UPHE16/SM-W2016_twrp_device_tree.git device/samsung/w2016
         cd device/samsung/w2016
-        # 修正命名 (解决 image_2b6789.png 找不到配置文件的问题)
+        
+        # 1. 修正命名逻辑 (解决 image_2b6789.png 找不到配置的问题)
         [ -f omni_royceltectc.mk ] && mv omni_royceltectc.mk omni_w2016.mk || true
         grep -rl 'royceltectc' . | xargs sed -i 's/royceltectc/w2016/g' || true
         sed -i 's/omni_royceltectc/omni_w2016/g' AndroidProducts.mk || true
-        
-        # 暴力清理旧变量并强制注入 LZMA 压缩
+
+        # 2. 强制注入瘦身参数到 BoardConfig.mk
+        # 删除旧定义防止冲突
         sed -i '/LZMA_RAMDISK_TARGET/d' BoardConfig.mk
+        sed -i '/BOARD_RECOVERYIMAGE_PARTITION_SIZE/d' BoardConfig.mk
+        
+        # 注入新参数
         echo "LZMA_RAMDISK_TARGET := true" >> BoardConfig.mk
         echo "TW_EXCLUDE_ENCRYPTED_BACKUPS := true" >> BoardConfig.mk
         echo "TW_INCLUDE_CRYPTO := false" >> BoardConfig.mk
-        # 彻底物理删除语言包减重
-        rm -rf ~/twrp/bootable/recovery/languages/*
-
-    - name: 开始编译
-      run: |
-        PATH=$HOME/bin:$PATH
-        cd ~/twrp
-        export ALLOW_MISSING_DEPENDENCIES=true
-        source build/envsetup.sh
-        lunch omni_w2016-eng
-        # 【关键】先清理旧产物，确保体积缩减生效
-        make clean
-        make recoveryimage -j$(nproc)
-
-    - name: 上传编译结果
-      uses: actions/upload-artifact@v4
-      with:
-        name: W2016-TWRP-New
-        path: ~/twrp/out/target/product/w2016/recovery.img
+        echo "TW_EXCLUDE_DEFAULT_USB_INIT :=
