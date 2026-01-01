@@ -35,46 +35,42 @@ jobs:
         repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-9.0
         repo sync -j$(nproc) --force-sync --no-tags --no-clone-bundle
 
-    - name: 克隆并修正设备树
+    - name: 克隆并执行“究极外科手术”
       run: |
         cd ~/twrp
         git clone https://github.com/UPHE16/SM-W2016_twrp_device_tree.git device/samsung/w2016
         cd device/samsung/w2016
-        # 修正命名逻辑
+        
+        # 1. 修正重命名
         [ -f omni_royceltectc.mk ] && mv omni_royceltectc.mk omni_w2016.mk || true
         grep -rl 'royceltectc' . | xargs sed -i 's/royceltectc/w2016/g' || true
         sed -i 's/omni_royceltectc/omni_w2016/g' AndroidProducts.mk || true
 
-    - name: 注入内核修复参数 & 极致瘦身
-      run: |
-        cd ~/twrp/device/samsung/w2016
-        
-        # 1. 清理旧定义
+        # 2. 注入启动参数与极致瘦身 (解决黑屏重启)
         sed -i '/LZMA_RAMDISK_TARGET/d' BoardConfig.mk
         sed -i '/BOARD_KERNEL_CMDLINE/d' BoardConfig.mk
         sed -i '/BOARD_MKBOOTIMG_ARGS/d' BoardConfig.mk
         sed -i '/BOARD_RECOVERYIMAGE_PARTITION_SIZE/d' BoardConfig.mk
         
-        # 2. 注入启动修复参数 (针对黑屏重启问题)
-        # 匹配 image_45bd6f.png 中显示的偏移量
         {
           echo "LZMA_RAMDISK_TARGET := true"
           echo "BOARD_KERNEL_CMDLINE := console=ttySAC2,115200n8 androidboot.selinux=permissive androidboot.hardware=samsungexynos7420"
           echo "BOARD_MKBOOTIMG_ARGS := --ramdisk_offset 0x01000000 --tags_offset 0x00000100"
-          
-          # 极致瘦身参数
           echo "TW_EXCLUDE_ENCRYPTED_BACKUPS := true"
           echo "TW_INCLUDE_CRYPTO := false"
           echo "TW_EXCLUDE_MTP := true"
           echo "TW_NO_LANGUAGES := true"
           echo "TW_EXCLUDE_APEX := true"
-          
-          # 设定物理分区上限 (约 34MB)
+          echo "TW_EXCLUDE_NANO := true"
+          # 设置物理极限
           echo "BOARD_RECOVERYIMAGE_PARTITION_SIZE := 35651584"
         } >> BoardConfig.mk
         
-        # 3. 物理删除语言包 (减重核心)
-        rm -rf ~/twrp/bootable/recovery/languages/*
+        # 3. 物理删除：语言包 + 资源图 (减重约 2MB+)
+        cd ~/twrp
+        rm -rf bootable/recovery/languages/*
+        # 删除内置的资源图，TWRP 会使用默认的纯色背景，节省大量空间
+        find bootable/recovery/gui/theme -name "*.png" -delete || true
 
     - name: 强制清理并编译
       run: |
@@ -83,9 +79,11 @@ jobs:
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
         lunch omni_w2016-eng
-        # 必须 clean 以确保参数生效
         make clean
         make recoveryimage -j$(nproc)
 
     - name: 上传结果
       uses: actions/upload-artifact@v4
+      with:
+        name: W2016-TWRP-Final-Success
+        path: ~/twrp/out/target/product/w2016/recovery.img
