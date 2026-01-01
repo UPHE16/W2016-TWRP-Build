@@ -41,7 +41,7 @@ jobs:
     - name: 克隆并强制修正设备树 (解决 Product Config 报错)
       run: |
         cd ~/twrp
-        git clone https://github.com/Natsume324/SM-W2016_twrp_device_tree.git device/samsung/w2016
+        git clone https://github.com/UPHE16/SM-W2016_twrp_device_tree.git device/samsung/w2016
         cd device/samsung/w2016
         # 强制改名并替换内部引用
         [ -f omni_royceltectc.mk ] && mv omni_royceltectc.mk omni_w2016.mk || true
