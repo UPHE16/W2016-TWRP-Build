@@ -1,11 +1,11 @@
-name: W2016 Recovery Build
+name: W2016 TWRP Build
 
 on:
-  workflow_dispatch: # 允许你手动点击按钮开始编译
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04 # 使用标准的 Linux 环境
+    runs-on: ubuntu-20.04
 
     steps:
     - name: 检查代码
@@ -14,31 +14,39 @@ jobs:
     - name: 安装编译环境
       run: |
         sudo apt-get update
-        sudo apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip bc python
+        sudo apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip bc python3 python-is-python3
 
-    - name: 部署编译工具 (Minimal Manifest)
+    - name: 安装 Repo 工具
       run: |
+        mkdir ~/bin
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+        chmod a+x ~/bin/repo
+        echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
+
+    - name: 初始化 TWRP 源码 (使用 Omni 9.0 分支)
+      run: |
+        PATH=$HOME/bin:$PATH
         mkdir ~/twrp
         cd ~/twrp
-        git clone https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-9.0 manifest
-        # 注意：W2016 是 5.1 系统，用 9.0 的 manifest 兼容性最好
+        repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-9.0
+        repo sync -j$(nproc)
 
-    - name: 克隆你的 W2016 设备树
+    - name: 克隆设备树
       run: |
         cd ~/twrp
-        # 下面这行填入你找到的那个 W2016 设备树链接
         git clone https://github.com/Natsume324/SM-W2016_twrp_device_tree.git device/samsung/w2016
 
-    - name: 开始编译
+    - name: 开始编译 (制作 recovery 镜像)
       run: |
+        PATH=$HOME/bin:$PATH
         cd ~/twrp
         export ALLOW_MISSING_DEPENDENCIES=true
-        . build/envsetup.sh
+        source build/envsetup.sh
         lunch omni_w2016-eng
         make recoveryimage -j$(nproc)
 
-    - name: 上传编译好的文件
+    - name: 上传编译结果
       uses: actions/upload-artifact@v3
       with:
-        name: W2016-TWRP-Image
+        name: W2016-TWRP-Recovery
         path: ~/twrp/out/target/product/w2016/recovery.img
