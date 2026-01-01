@@ -46,7 +46,7 @@ jobs:
         make recoveryimage -j$(nproc)
 
     - name: 上传编译结果
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: W2016-TWRP-Recovery
         path: ~/twrp/out/target/product/w2016/recovery.img
