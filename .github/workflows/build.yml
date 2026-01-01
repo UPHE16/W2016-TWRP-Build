@@ -1,4 +1,4 @@
-nname: W2016 TWRP Final Slim Build
+name: W2016 TWRP Final Slim Build
 
 on:
   workflow_dispatch:
