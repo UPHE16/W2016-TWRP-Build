@@ -1,4 +1,4 @@
-name: W2016 TWRP Build (Final Fix)
+name: W2016 TWRP Build (Super Fix)
 
 on:
   workflow_dispatch:
@@ -34,13 +34,17 @@ jobs:
         repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-9.0
         repo sync -j$(nproc) --force-sync --no-tags --no-clone-bundle
 
-    - name: 克隆并修正设备树
+    - name: 克隆并强制修正设备树 (核心改动)
       run: |
         cd ~/twrp
         git clone https://github.com/Natsume324/SM-W2016_twrp_device_tree.git device/samsung/w2016
-        # 强制将 omni_royceltectc 修改为 omni_w2016 以匹配 lunch 命令
         cd device/samsung/w2016
-        mv omni_royceltectc.mk omni_w2016.mk
+        # 1. 强制重命名关键的 .mk 文件
+        [ -f omni_royceltectc.mk ] && mv omni_royceltectc.mk omni_w2016.mk
+        # 2. 批量替换所有文件内部的代号，把 royceltectc 变成 w2016
+        grep -rl 'royceltectc' . | xargs sed -i 's/royceltectc/w2016/g'
+        # 3. 额外确认 AndroidProducts.mk 里的定义
+        sed -i 's/omni_w2016/omni_w2016/g' AndroidProducts.mk
 
     - name: 开始编译
       run: |
@@ -48,7 +52,6 @@ jobs:
         cd ~/twrp
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
-        # 这里使用 w2016 匹配上面改名后的文件
         lunch omni_w2016-eng
         make recoveryimage -j$(nproc)
 
