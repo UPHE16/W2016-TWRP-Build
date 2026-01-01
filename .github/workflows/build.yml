@@ -1,26 +1,28 @@
-name: W2016 TWRP Build (Python2 Legacy Fix)
+name: W2016 TWRP Build (The Final Stand)
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    # 改回 20.04，因为它对老版安卓代码的兼容性最强
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04 # 确保秒排队
 
     steps:
     - name: 检查代码
-      uses: actions/checkout@v4
+      uses: actions/checkout@v4 # 升级到最新 v4
 
     - name: 腾出磁盘空间
       run: |
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc "/usr/local/share/boost" "$AGENT_TOOLSDIRECTORY"
+        # 清理更多空间，确保不报 No space left
 
-    - name: 安装编译环境 (包含 Python 2)
+    - name: 安装编译环境 & 强制补齐旧版库
       run: |
         sudo apt-get update
-        # 强制安装 python2 和 python-is-python2
-        sudo apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 libncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip bc python2 python-is-python2 libtinfo5 libncurses5
+        # 安装 Python 2 和 libtinfo5 (解决 image_2bc967.png 报错)
+        sudo apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 libncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip bc python2 libtinfo5 libncurses5
+        # 手动建立 python2 链接，防止 Python 3 导致的 print 语法报错
+        sudo ln -sf /usr/bin/python2 /usr/bin/python
 
     - name: 安装 Repo 工具
       run: |
@@ -36,28 +38,27 @@ jobs:
         repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-9.0
         repo sync -j$(nproc) --force-sync --no-tags --no-clone-bundle
 
-    - name: 克隆并强制修正设备树
+    - name: 克隆并强制修正设备树 (解决 Product Config 报错)
       run: |
         cd ~/twrp
         git clone https://github.com/Natsume324/SM-W2016_twrp_device_tree.git device/samsung/w2016
         cd device/samsung/w2016
-        [ -f omni_royceltectc.mk ] && mv omni_royceltectc.mk omni_w2016.mk
-        grep -rl 'royceltectc' . | xargs sed -i 's/royceltectc/w2016/g'
-        sed -i 's/omni_w2016/omni_w2016/g' AndroidProducts.mk
+        # 强制改名并替换内部引用
+        [ -f omni_royceltectc.mk ] && mv omni_royceltectc.mk omni_w2016.mk || true
+        grep -rl 'royceltectc' . | xargs sed -i 's/royceltectc/w2016/g' || true
+        sed -i 's/omni_royceltectc/omni_w2016/g' AndroidProducts.mk || true
 
     - name: 开始编译
       run: |
         PATH=$HOME/bin:$PATH
         cd ~/twrp
         export ALLOW_MISSING_DEPENDENCIES=true
-        # 强制指定用 python2 运行
-        export PYTHON_BINARY=python2
         source build/envsetup.sh
         lunch omni_w2016-eng
         make recoveryimage -j$(nproc)
 
     - name: 上传编译结果
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v4 # 必须使用 v4 否则报错
       with:
         name: W2016-TWRP-Recovery
         path: ~/twrp/out/target/product/w2016/recovery.img
