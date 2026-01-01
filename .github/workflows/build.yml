@@ -1,4 +1,4 @@
-name: W2016 TWRP Final Slim Build
+name: W2016 TWRP Final Success Build
 
 on:
   workflow_dispatch:
@@ -15,9 +15,10 @@ jobs:
       run: |
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc "/usr/local/share/boost" "$AGENT_TOOLSDIRECTORY"
 
-    - name: 配置 Python 2 与运行库
+    - name: 配置编译环境
       run: |
         sudo apt-get update
+        # 解决 image_2c546b.png 中的包名错误，直接安装 python2
         sudo apt-get install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 libncurses5-dev x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc unzip bc python2 libtinfo5 libncurses5
         sudo ln -sf /usr/bin/python2 /usr/bin/python
 
@@ -35,35 +36,40 @@ jobs:
         repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-9.0
         repo sync -j$(nproc) --force-sync --no-tags --no-clone-bundle
 
-    - name: 克隆设备树并执行“外科手术式瘦身”
+    - name: 克隆并修正设备树
       run: |
         cd ~/twrp
         git clone https://github.com/UPHE16/SM-W2016_twrp_device_tree.git device/samsung/w2016
         cd device/samsung/w2016
-        
-        # 1. 修正命名逻辑
+        # 修正重命名逻辑
         [ -f omni_royceltectc.mk ] && mv omni_royceltectc.mk omni_w2016.mk || true
         grep -rl 'royceltectc' . | xargs sed -i 's/royceltectc/w2016/g' || true
         sed -i 's/omni_royceltectc/omni_w2016/g' AndroidProducts.mk || true
 
-        # 2. 注入强制瘦身参数
+    - name: 核心功能阉割 (强制瘦身)
+      run: |
+        cd ~/twrp/device/samsung/w2016
+        # 彻底清理旧定义
         sed -i '/LZMA_RAMDISK_TARGET/d' BoardConfig.mk
+        sed -i '/TW_EXCLUDE_ENCRYPTED_BACKUPS/d' BoardConfig.mk
         sed -i '/BOARD_RECOVERYIMAGE_PARTITION_SIZE/d' BoardConfig.mk
-        echo "LZMA_RAMDISK_TARGET := true" >> BoardConfig.mk
-        echo "TW_EXCLUDE_ENCRYPTED_BACKUPS := true" >> BoardConfig.mk
-        echo "TW_INCLUDE_CRYPTO := false" >> BoardConfig.mk
-        # 抬高一点上限到 34.5MB (36175872)，确保只要瘦身一点点就能通过
-        echo "BOARD_RECOVERYIMAGE_PARTITION_SIZE := 36175872" >> BoardConfig.mk
         
-        # 3. 【核心减重】物理删除大组件
-        cd ~/twrp
-        rm -rf bootable/recovery/languages/* # 删除多语言
-        rm -rf external/htop                      # 删除 htop
-        rm -rf external/nano                      # 删除 nano 编辑器
-        # 下面这两行如果存在，能省下 2-4MB
-        [ -d bootable/recovery/gui/devicesettings ] && rm -rf bootable/recovery/gui/devicesettings || true
+        # 写入高压缩与瘦身参数
+        {
+          echo "LZMA_RAMDISK_TARGET := true"
+          echo "TW_EXCLUDE_ENCRYPTED_BACKUPS := true"
+          echo "TW_INCLUDE_CRYPTO := false"
+          echo "TW_EXCLUDE_DEFAULT_USB_INIT := true"
+          echo "TW_NO_BATT_PERCENT := true"
+          echo "TW_EXCLUDE_SUPERSU := true"
+          # 设置略高于官方的大小限制 (33MB)，确保能刷入且不报错
+          echo "BOARD_RECOVERYIMAGE_PARTITION_SIZE := 34603008"
+        } >> BoardConfig.mk
+        
+        # 物理删除语言包 (这个不会导致依赖错误)
+        rm -rf ~/twrp/bootable/recovery/languages/*
 
-    - name: 强制清理并编译
+    - name: 开始编译
       run: |
         PATH=$HOME/bin:$PATH
         cd ~/twrp
@@ -76,5 +82,5 @@ jobs:
     - name: 上传结果
       uses: actions/upload-artifact@v4
       with:
-        name: W2016-TWRP-Slimmed
+        name: W2016-TWRP-Slim-Final
         path: ~/twrp/out/target/product/w2016/recovery.img
