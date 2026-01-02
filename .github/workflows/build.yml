@@ -1,4 +1,4 @@
-name: W2016 TWRP fff
+name: W2016 TWRP Finalfff
 
 on:
   workflow_dispatch:
@@ -35,43 +35,46 @@ jobs:
         repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-9.0
         repo sync -j$(nproc) --force-sync --no-tags --no-clone-bundle
 
-    - name: 克隆并执行究极配置
+    - name: 克隆并配置设备树
       run: |
         cd ~/twrp
         git clone https://github.com/UPHE16/SM-W2016_twrp_device_tree.git device/samsung/w2016
         cd device/samsung/w2016
         
-        # 修正命名
+        # 修正重命名
         [ -f omni_royceltectc.mk ] && mv omni_royceltectc.mk omni_w2016.mk || true
         grep -rl 'royceltectc' . | xargs sed -i 's/royceltectc/w2016/g' || true
         sed -i 's/omni_royceltectc/omni_w2016/g' AndroidProducts.mk || true
 
-        # 重写 BoardConfig.mk (注入修复卡屏的参数)
+        # --- 核心修复区 ---
+        # 清理旧参数
         sed -i '/LZMA_RAMDISK_TARGET/d' BoardConfig.mk
         sed -i '/BOARD_KERNEL_CMDLINE/d' BoardConfig.mk
         sed -i '/BOARD_MKBOOTIMG_ARGS/d' BoardConfig.mk
         sed -i '/BOARD_RECOVERYIMAGE_PARTITION_SIZE/d' BoardConfig.mk
         
+        # 注入修复参数
         {
           echo "LZMA_RAMDISK_TARGET := true"
-          # 增加 vmalloc 和 selinux=permissive 是 5.1.1 避免卡第一屏的关键
-          echo "BOARD_KERNEL_CMDLINE := console=ttySAC2,115200n8 androidboot.selinux=permissive androidboot.hardware=samsungexynos7420 vmalloc=256M"
-          # 精确匹配 image_7bd8cb.png 的偏移量
+          # 简化启动参数：去掉可能导致卡屏的 console 定义，只保留权限修复
+          echo "BOARD_KERNEL_CMDLINE := androidboot.selinux=permissive vmalloc=256M"
+          # 修正引导偏移量
           echo "BOARD_MKBOOTIMG_ARGS := --base 0x10000000 --pagesize 2048 --ramdisk_offset 0x01000000 --tags_offset 0x00000100"
           
-          # 极致瘦身
+          # 极致瘦身：移除 TWRP APP 安装包 (关键减重 1MB+)
+          echo "TW_EXCLUDE_TWRPAPP := true"
           echo "TW_NO_LANGUAGES := true"
           echo "TW_EXCLUDE_ENCRYPTED_BACKUPS := true"
           echo "TW_INCLUDE_CRYPTO := false"
           echo "TW_EXCLUDE_MTP := true"
           echo "TW_EXCLUDE_APEX := true"
           echo "TW_EXCLUDE_NANO := true"
-          echo "BOARD_CUSTOM_BOOTIMG_MK := device/samsung/w2016/mkbootimg.mk"
+          
           # 设定物理极限
           echo "BOARD_RECOVERYIMAGE_PARTITION_SIZE := 35651584"
         } >> BoardConfig.mk
         
-        # 彻底移除多语言代码
+        # 物理删除语言包
         rm -rf ~/twrp/bootable/recovery/languages/*
 
     - name: 编译
@@ -87,5 +90,5 @@ jobs:
     - name: 上传结果
       uses: actions/upload-artifact@v4
       with:
-        name: W2016-TWRP-Final-Success
+        name: W2016-TWRP-Final
         path: ~/twrp/out/target/product/w2016/recovery.img
