@@ -1,4 +1,4 @@
-name: W2016 TWRP Finalfff
+name: W2016 TWRP GZIP Fix
 
 on:
   workflow_dispatch:
@@ -47,21 +47,29 @@ jobs:
         sed -i 's/omni_royceltectc/omni_w2016/g' AndroidProducts.mk || true
 
         # --- 核心修复区 ---
-        # 清理旧参数
         sed -i '/LZMA_RAMDISK_TARGET/d' BoardConfig.mk
         sed -i '/BOARD_KERNEL_CMDLINE/d' BoardConfig.mk
         sed -i '/BOARD_MKBOOTIMG_ARGS/d' BoardConfig.mk
         sed -i '/BOARD_RECOVERYIMAGE_PARTITION_SIZE/d' BoardConfig.mk
+        sed -i '/TW_THEME/d' BoardConfig.mk
         
-        # 注入修复参数
         {
-          echo "LZMA_RAMDISK_TARGET := true"
-          # 简化启动参数：去掉可能导致卡屏的 console 定义，只保留权限修复
+          # 1. 关键修复：不使用 LZMA，默认使用 GZIP (解决卡第一屏)
+          # 注意：这里故意不写 LZMA_RAMDISK_TARGET := true
+          
+          # 2. 空间补偿：强制使用低分辨率主题 (节省 4-6MB)
+          echo "TW_THEME := portrait_mdpi"
+          
+          # 3. 内核参数：保持 permissive
           echo "BOARD_KERNEL_CMDLINE := androidboot.selinux=permissive vmalloc=256M"
-          # 修正引导偏移量
+          
+          # 4. 引导偏移量 (保持之前成功的参数)
           echo "BOARD_MKBOOTIMG_ARGS := --base 0x10000000 --pagesize 2048 --ramdisk_offset 0x01000000 --tags_offset 0x00000100"
           
-          # 极致瘦身：移除 TWRP APP 安装包 (关键减重 1MB+)
+          # 5. 图形驱动兼容性 (防止花屏/死机)
+          echo "RECOVERY_GRAPHICS_USE_LINELENGTH := true"
+
+          # 6. 极限精简 (确保 GZIP 也能塞进去)
           echo "TW_EXCLUDE_TWRPAPP := true"
           echo "TW_NO_LANGUAGES := true"
           echo "TW_EXCLUDE_ENCRYPTED_BACKUPS := true"
@@ -69,12 +77,13 @@ jobs:
           echo "TW_EXCLUDE_MTP := true"
           echo "TW_EXCLUDE_APEX := true"
           echo "TW_EXCLUDE_NANO := true"
+          echo "TW_EXCLUDE_DEFAULT_USB_INIT := true"
           
           # 设定物理极限
           echo "BOARD_RECOVERYIMAGE_PARTITION_SIZE := 35651584"
         } >> BoardConfig.mk
         
-        # 物理删除语言包
+        # 物理删除
         rm -rf ~/twrp/bootable/recovery/languages/*
 
     - name: 编译
@@ -90,5 +99,5 @@ jobs:
     - name: 上传结果
       uses: actions/upload-artifact@v4
       with:
-        name: W2016-TWRP-Final
+        name: W2016-TWRP-GZIP-Fix
         path: ~/twrp/out/target/product/w2016/recovery.img
